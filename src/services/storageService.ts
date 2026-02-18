@@ -1,43 +1,94 @@
+import { supabase } from '../supabase'
+
 interface Task {
-  id: number
+  id?: number
   text: string
   completed: boolean
 }
 
 interface Note {
-  id: number
+  id?: number
   title: string
   content: string
   color: string
 }
 
-const TASKS_KEY = 'zen-tasks'
-const NOTES_KEY = 'zen-notes'
-
 export const storageService = {
   // --- Tasks ---
-  getTasks(): Task[] {
-    const data = localStorage.getItem(TASKS_KEY)
-    return data ? JSON.parse(data) : []
+  async getTasks(): Promise<Task[]> {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .order('id', { ascending: false })
+
+    if (error) throw error
+    return data || []
   },
 
-  saveTasks(tasks: Task[]): void {
-    localStorage.setItem(TASKS_KEY, JSON.stringify(tasks))
+  async addTask(task: Omit<Task, 'id'>) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert([task])
+      .select()
+
+    if (error) throw error
+    return data[0]
+  },
+
+  async updateTask(id: number, updates: Partial<Task>) {
+    const { error } = await supabase
+      .from('tasks')
+      .update(updates)
+      .eq('id', id)
+
+    if (error) throw error
+  },
+
+  async deleteTask(id: number) {
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', id)
+
+    if (error) throw error
   },
 
   // --- Notes ---
-  getNotes(): Note[] {
-    const data = localStorage.getItem(NOTES_KEY)
-    return data ? JSON.parse(data) : []
+  async getNotes(): Promise<Note[]> {
+    const { data, error } = await supabase
+      .from('notes')
+      .select('*')
+      .order('id', { ascending: false })
+
+    if (error) throw error
+    return data || []
   },
 
-  saveNotes(notes: Note[]): void {
-    localStorage.setItem(NOTES_KEY, JSON.stringify(notes))
+  async addNote(note: Omit<Note, 'id'>) {
+    const { data, error } = await supabase
+      .from('notes')
+      .insert([note])
+      .select()
+
+    if (error) throw error
+    return data[0]
   },
 
-  // --- Cloud Sync Simulation ---
-  async syncToCloud() {
-    // Simula una latencia de red
-    return new Promise((resolve) => setTimeout(resolve, 800))
+  async updateNote(id: number, updates: Partial<Note>) {
+    const { error } = await supabase
+      .from('notes')
+      .update(updates)
+      .eq('id', id)
+
+    if (error) throw error
+  },
+
+  async deleteNote(id: number) {
+    const { error } = await supabase
+      .from('notes')
+      .delete()
+      .eq('id', id)
+
+    if (error) throw error
   }
 }

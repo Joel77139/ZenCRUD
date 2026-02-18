@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { storageService } from './services/storageService'
 
 // --- Interfaces ---
@@ -21,6 +21,7 @@ const isAuth = ref(false)
 const username = ref('')
 const currentView = ref<'tasks' | 'notes'>('tasks')
 const isSyncing = ref(false)
+const isLoading = ref(true)
 
 const tasks = ref<Task[]>([])
 const newTaskText = ref('')
@@ -37,33 +38,34 @@ const editNoteContent = ref('')
 const colors = ['#8b5cf6', '#38bdf8', '#10b981', '#f59e0b', '#ef4444']
 
 // --- Initialization ---
-onMounted(() => {
-  tasks.value = storageService.getTasks()
-  notes.value = storageService.getNotes()
-  
+onMounted(async () => {
   const savedUser = localStorage.getItem('zen-user')
   if (savedUser) {
     username.value = savedUser
     isAuth.value = true
+    await loadData()
   }
+  isLoading.value = false
 })
 
-// --- Persistence & Sync Simulation ---
-watch([tasks, notes], async () => {
-  isSyncing.value = true
-  storageService.saveTasks(tasks.value)
-  storageService.saveNotes(notes.value)
-  
-  // Simulamos el guardado en la nube (Supabase pre-check)
-  await storageService.syncToCloud()
-  isSyncing.value = false
-}, { deep: true })
+const loadData = async () => {
+  try {
+    isSyncing.value = true
+    tasks.value = await storageService.getTasks()
+    notes.value = await storageService.getNotes()
+  } catch (e) {
+    console.error("Error loading data:", e)
+  } finally {
+    isSyncing.value = false
+  }
+}
 
 // --- Auth Functions ---
-const login = () => {
+const login = async () => {
   if (username.value.trim()) {
     isAuth.value = true
     localStorage.setItem('zen-user', username.value)
+    await loadData()
   }
 }
 
@@ -74,23 +76,41 @@ const logout = () => {
 }
 
 // --- Task Functions ---
-const addTask = () => {
+const addTask = async () => {
   if (newTaskText.value.trim()) {
-    tasks.value.unshift({
-      id: Date.now(),
-      text: newTaskText.value.trim(),
-      completed: false
-    })
-    newTaskText.value = ''
+    isSyncing.value = true
+    try {
+      const newTask = await storageService.addTask({
+        text: newTaskText.value.trim(),
+        completed: false
+      })
+      tasks.value.unshift(newTask)
+      newTaskText.value = ''
+    } finally {
+      isSyncing.value = false
+    }
   }
 }
 
-const deleteTask = (id: number) => {
-  tasks.value = tasks.value.filter(t => t.id !== id)
+const deleteTask = async (id: number) => {
+  isSyncing.value = true
+  try {
+    await storageService.deleteTask(id)
+    tasks.value = tasks.value.filter(t => t.id !== id)
+  } finally {
+    isSyncing.value = false
+  }
 }
 
-const toggleTask = (task: Task) => {
-  task.completed = !task.completed
+const toggleTask = async (task: Task) => {
+  isSyncing.value = true
+  try {
+    const newStatus = !task.completed
+    await storageService.updateTask(task.id, { completed: newStatus })
+    task.completed = newStatus
+  } finally {
+    isSyncing.value = false
+  }
 }
 
 const startEdit = (task: Task) => {
@@ -98,30 +118,47 @@ const startEdit = (task: Task) => {
   editText.value = task.text
 }
 
-const saveEdit = () => {
+const saveEdit = async () => {
   const task = tasks.value.find(t => t.id === editingId.value)
   if (task && editText.value.trim()) {
-    task.text = editText.value.trim()
+    isSyncing.value = true
+    try {
+      await storageService.updateTask(task.id, { text: editText.value.trim() })
+      task.text = editText.value.trim()
+    } finally {
+      isSyncing.value = false
+    }
   }
   editingId.value = null
 }
 
 // --- Note Functions ---
-const addNote = () => {
+const addNote = async () => {
   if (newNoteTitle.value.trim() || newNoteContent.value.trim()) {
-    notes.value.unshift({
-      id: Date.now(),
-      title: newNoteTitle.value.trim() || 'Sin título',
-      content: newNoteContent.value.trim(),
-      color: colors[Math.floor(Math.random() * colors.length)]
-    })
-    newNoteTitle.value = ''
-    newNoteContent.value = ''
+    isSyncing.value = true
+    try {
+      const newNote = await storageService.addNote({
+        title: newNoteTitle.value.trim() || 'Sin título',
+        content: newNoteContent.value.trim(),
+        color: colors[Math.floor(Math.random() * colors.length)]
+      })
+      notes.value.unshift(newNote)
+      newNoteTitle.value = ''
+      newNoteContent.value = ''
+    } finally {
+      isSyncing.value = false
+    }
   }
 }
 
-const deleteNote = (id: number) => {
-  notes.value = notes.value.filter(n => n.id !== id)
+const deleteNote = async (id: number) => {
+  isSyncing.value = true
+  try {
+    await storageService.deleteNote(id)
+    notes.value = notes.value.filter(n => n.id !== id)
+  } finally {
+    isSyncing.value = false
+  }
 }
 
 const startEditNote = (note: Note) => {
@@ -130,22 +167,37 @@ const startEditNote = (note: Note) => {
   editNoteContent.value = note.content
 }
 
-const saveEditNote = () => {
+const saveEditNote = async () => {
   const note = notes.value.find(n => n.id === editingNoteId.value)
   if (note) {
-    note.title = editNoteTitle.value.trim() || 'Sin título'
-    note.content = editNoteContent.value.trim()
+    isSyncing.value = true
+    try {
+      const title = editNoteTitle.value.trim() || 'Sin título'
+      const content = editNoteContent.value.trim()
+      await storageService.updateNote(note.id, { title, content })
+      note.title = title
+      note.content = content
+    } finally {
+      isSyncing.value = false
+    }
   }
   editingNoteId.value = null
 }
 </script>
 
 <template>
-  <!-- PANTALLA DE LOGIN MOCK -->
-  <div v-if="!isAuth" class="login-screen">
+  <!-- PANTALLA DE CARGA -->
+  <div v-if="isLoading && isAuth" class="login-screen">
+    <div class="status-badge syncing">
+      <span class="icon">⏳</span> Cargando tus datos...
+    </div>
+  </div>
+
+  <!-- PANTALLA DE LOGIN -->
+  <div v-else-if="!isAuth" class="login-screen">
     <div class="glass-card login-card">
       <h1>Bienvenido a ZenTask</h1>
-      <p class="subtitle">Ingresa tu nombre para comenzar</p>
+      <p class="subtitle">Conectado a Supabase Realtime</p>
       <input v-model="username" @keyup.enter="login" placeholder="Tu nombre..." autofocus />
       <button @click="login" class="btn-primary" :disabled="!username.trim()">Entrar</button>
     </div>
@@ -171,10 +223,11 @@ const saveEditNote = () => {
     </nav>
 
     <div class="glass-card main-card">
+      <!-- VIEW: TASKS -->
       <div v-if="currentView === 'tasks'" class="view-content">
         <div class="input-group">
           <input v-model="newTaskText" @keyup.enter="addTask" placeholder="¿Qué necesitas hacer hoy?" />
-          <button @click="addTask" class="btn-primary">Añadir</button>
+          <button @click="addTask" class="btn-primary" :disabled="isSyncing">Añadir</button>
         </div>
 
         <ul class="task-list">
@@ -191,20 +244,21 @@ const saveEditNote = () => {
                 </div>
                 <div class="actions">
                   <button @click="startEdit(task)" class="btn-icon">✎</button>
-                  <button @click="deleteTask(task.id)" class="btn-icon delete">🗑</button>
+                  <button @click="deleteTask(task.id)" class="btn-icon delete" :disabled="isSyncing">🗑</button>
                 </div>
               </div>
             </li>
           </transition-group>
         </ul>
-        <div v-if="tasks.length === 0" class="empty-state">No hay tareas pendientes.</div>
+        <div v-if="tasks.length === 0 && !isSyncing" class="empty-state">No hay tareas pendientes.</div>
       </div>
 
+      <!-- VIEW: NOTES -->
       <div v-else class="view-content">
         <div class="note-form input-group">
           <input v-model="newNoteTitle" placeholder="Título (opcional)" />
           <textarea v-model="newNoteContent" placeholder="Escribe tu nota aquí..."></textarea>
-          <button @click="addNote" class="btn-primary">Guardar Nota</button>
+          <button @click="addNote" class="btn-primary" :disabled="isSyncing">Guardar Nota</button>
         </div>
 
         <div class="notes-grid">
@@ -223,7 +277,7 @@ const saveEditNote = () => {
                   <h3>{{ note.title }}</h3>
                   <div class="actions">
                     <button @click="startEditNote(note)" class="btn-icon">✎</button>
-                    <button @click="deleteNote(note.id)" class="btn-icon delete">🗑</button>
+                    <button @click="deleteNote(note.id)" class="btn-icon delete" :disabled="isSyncing">🗑</button>
                   </div>
                 </div>
                 <p>{{ note.content }}</p>
@@ -231,12 +285,12 @@ const saveEditNote = () => {
             </div>
           </transition-group>
         </div>
-        <div v-if="notes.length === 0" class="empty-state">No hay notas guardadas.</div>
+        <div v-if="notes.length === 0 && !isSyncing" class="empty-state">No hay notas guardadas.</div>
       </div>
     </div>
     
     <footer class="app-footer">
-      ZenTask v1.0 • Preparado para Supabase 🚀
+      ZenTask v1.1 • Conectado a Supabase Realtime 🚀
     </footer>
   </div>
 </template>
