@@ -1,9 +1,11 @@
 import { supabase } from '../supabase'
 
 interface Task {
-  id?: number
+  id: number
   text: string
-  completed: boolean
+  status: 'pendiente' | 'en progreso' | 'completada'
+  created_at: string
+  due_date?: string
 }
 
 interface Note {

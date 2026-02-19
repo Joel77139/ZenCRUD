@@ -6,7 +6,9 @@ import { storageService } from './services/storageService'
 interface Task {
   id: number
   text: string
-  completed: boolean
+  status: 'pendiente' | 'en progreso' | 'completada'
+  created_at: string
+  due_date?: string
 }
 
 interface Note {
@@ -25,6 +27,7 @@ const isLoading = ref(true)
 
 const tasks = ref<Task[]>([])
 const newTaskText = ref('')
+const newTaskDueDate = ref('')
 const editingId = ref<number | null>(null)
 const editText = ref('')
 
@@ -54,7 +57,8 @@ const loadData = async () => {
     tasks.value = await storageService.getTasks()
     notes.value = await storageService.getNotes()
   } catch (e) {
-    console.error("Error loading data:", e)
+    console.error("Error al cargar datos:", e)
+    alert("Error al cargar datos de Supabase. Revisa la consola.")
   } finally {
     isSyncing.value = false
   }
@@ -75,6 +79,13 @@ const logout = () => {
   username.value = ''
 }
 
+// --- Helpers ---
+const formatDate = (dateString: string) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+}
+
 // --- Task Functions ---
 const addTask = async () => {
   if (newTaskText.value.trim()) {
@@ -82,10 +93,14 @@ const addTask = async () => {
     try {
       const newTask = await storageService.addTask({
         text: newTaskText.value.trim(),
-        completed: false
+        due_date: newTaskDueDate.value || undefined
       })
       tasks.value.unshift(newTask)
       newTaskText.value = ''
+      newTaskDueDate.value = ''
+    } catch (e) {
+      console.error("Error al añadir tarea:", e)
+      alert("No se pudo añadir la tarea. Posiblemente falta configurar RLS en Supabase.")
     } finally {
       isSyncing.value = false
     }
@@ -102,12 +117,18 @@ const deleteTask = async (id: number) => {
   }
 }
 
-const toggleTask = async (task: Task) => {
+const cycleStatus = async (task: Task) => {
   isSyncing.value = true
   try {
-    const newStatus = !task.completed
-    await storageService.updateTask(task.id, { completed: newStatus })
-    task.completed = newStatus
+    const statusFlow: Task['status'][] = ['pendiente', 'en progreso', 'completada']
+    const currentIndex = statusFlow.indexOf(task.status)
+    const nextStatus = statusFlow[(currentIndex + 1) % statusFlow.length]
+    
+    await storageService.updateTask(task.id, { status: nextStatus })
+    task.status = nextStatus
+  } catch (e) {
+    console.error("Error al cambiar estado:", e)
+    alert("Hubo un error al actualizar el estado en Supabase.")
   } finally {
     isSyncing.value = false
   }
@@ -227,20 +248,32 @@ const saveEditNote = async () => {
       <div v-if="currentView === 'tasks'" class="view-content">
         <div class="input-group">
           <input v-model="newTaskText" @keyup.enter="addTask" placeholder="¿Qué necesitas hacer hoy?" />
-          <button @click="addTask" class="btn-primary" :disabled="isSyncing">Añadir</button>
+          <div class="input-row">
+            <input type="date" v-model="newTaskDueDate" class="date-input" />
+            <button @click="addTask" class="btn-primary" :disabled="isSyncing">Añadir Tarea</button>
+          </div>
         </div>
 
         <ul class="task-list">
           <transition-group name="list">
-            <li v-for="task in tasks" :key="task.id" class="task-item" :class="{ completed: task.completed }">
+            <li v-for="task in tasks" :key="task.id" class="task-item" :class="task.status">
               <div v-if="editingId === task.id" class="edit-mode">
                 <input v-model="editText" @keyup.enter="saveEdit" autofocus />
                 <button @click="saveEdit" class="btn-save">✓</button>
               </div>
               <div v-else class="view-mode">
-                <div class="task-content" @click="toggleTask(task)">
-                  <div class="checkbox"><div v-if="task.completed" class="check"></div></div>
-                  <span>{{ task.text }}</span>
+                <div class="task-content">
+                  <div class="status-toggle" @click="cycleStatus(task)" :title="'Estado: ' + task.status">
+                    <div class="status-indicator"></div>
+                    <span class="status-text">{{ task.status }}</span>
+                  </div>
+                  <div class="task-info">
+                    <span class="task-text">{{ task.text }}</span>
+                    <div class="task-dates">
+                      <span class="date-tag created">📅 {{ formatDate(task.created_at) }}</span>
+                      <span v-if="task.due_date" class="date-tag due">⏰ {{ formatDate(task.due_date) }}</span>
+                    </div>
+                  </div>
                 </div>
                 <div class="actions">
                   <button @click="startEdit(task)" class="btn-icon">✎</button>
@@ -369,7 +402,16 @@ const saveEditNote = async () => {
 
 /* Components */
 .input-group { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 2rem; }
-.btn-primary { background: var(--primary); color: white; padding: 0.75rem; border-radius: 0.75rem; font-weight: 600; }
+.input-row { display: flex; gap: 0.75rem; }
+.date-input { 
+  flex: 1; 
+  background: rgba(255, 255, 255, 0.05); 
+  border: 1px solid var(--glass-border);
+  color: var(--text-muted);
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+}
+.btn-primary { background: var(--primary); color: white; padding: 0.75rem; border-radius: 0.75rem; font-weight: 600; flex: 1; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .task-list { list-style: none; display: flex; flex-direction: column; gap: 1rem; }
@@ -379,10 +421,51 @@ const saveEditNote = async () => {
   border-radius: 1rem; padding: 1rem;
   transition: all 0.3s ease;
 }
-.task-content { display: flex; align-items: center; gap: 1rem; cursor: pointer; flex: 1; }
-.checkbox { width: 1.25rem; height: 1.25rem; border: 2px solid var(--primary); border-radius: 0.375rem; display: flex; align-items: center; justify-content: center; }
-.check { width: 0.6rem; height: 0.6rem; background: var(--primary); border-radius: 0.1rem; }
-.completed span { text-decoration: line-through; color: var(--text-muted); }
+.task-content { display: flex; align-items: flex-start; gap: 1rem; cursor: pointer; flex: 1; }
+.task-info { display: flex; flex-direction: column; gap: 0.4rem; }
+.task-text { font-size: 1.05rem; }
+.task-dates { display: flex; gap: 0.75rem; }
+.date-tag { font-size: 0.7rem; color: var(--text-muted); opacity: 0.8; display: flex; align-items: center; gap: 0.2rem; }
+.date-tag.due { color: #f59e0b; opacity: 1; font-weight: 600; }
+.status-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.8rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
+  border: 1px solid var(--glass-border);
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+.status-indicator {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.status-text {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* Pendiente */
+.task-item.pendiente .status-indicator { background: #a855f7; box-shadow: 0 0 10px rgba(168, 85, 247, 0.4); }
+.task-item.pendiente .status-text { color: #a855f7; }
+
+/* En Progreso */
+.task-item.en.progreso .status-indicator { background: #3b82f6; box-shadow: 0 0 10px rgba(59, 130, 246, 0.4); }
+.task-item.en.progreso .status-text { color: #3b82f6; }
+
+/* Completada */
+.task-item.completada .status-indicator { background: #10b981; box-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
+.task-item.completada .status-text { color: #10b981; }
+.task-item.completada span { text-decoration: line-through; opacity: 0.6; }
 
 .notes-grid { display: flex; flex-direction: column; gap: 1rem; }
 .note-card {
