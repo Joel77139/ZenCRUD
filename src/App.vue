@@ -1,22 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { storageService } from './services/storageService'
-
-// --- Interfaces ---
-interface Task {
-  id: number
-  text: string
-  status: 'pendiente' | 'en progreso' | 'completada'
-  created_at: string
-  due_date?: string
-}
-
-interface Note {
-  id: number
-  title: string
-  content: string
-  color: string
-}
+import { storageService, type Task, type Note } from './services/storageService'
 
 // --- State ---
 const isAuth = ref(false)
@@ -24,17 +8,19 @@ const username = ref('')
 const currentView = ref<'tasks' | 'notes'>('tasks')
 const isSyncing = ref(false)
 const isLoading = ref(true)
+const showDatePicker = ref(false)
 
 const tasks = ref<Task[]>([])
 const newTaskText = ref('')
 const newTaskDueDate = ref('')
+const newTaskPriority = ref<Task['priority']>('Media')
 const editingId = ref<number | null>(null)
 const editText = ref('')
 
 const notes = ref<Note[]>([])
 const newNoteTitle = ref('')
 const newNoteContent = ref('')
-const editingNoteId = ref<number | null>(null)
+const editingNoteId = ref<number | undefined | null>(null)
 const editNoteTitle = ref('')
 const editNoteContent = ref('')
 
@@ -93,11 +79,14 @@ const addTask = async () => {
     try {
       const newTask = await storageService.addTask({
         text: newTaskText.value.trim(),
-        due_date: newTaskDueDate.value || undefined
+        due_date: newTaskDueDate.value || undefined,
+        priority: newTaskPriority.value
       })
       tasks.value.unshift(newTask)
       newTaskText.value = ''
       newTaskDueDate.value = ''
+      newTaskPriority.value = 'Media'
+      showDatePicker.value = false
     } catch (e) {
       console.error("Error al añadir tarea:", e)
       alert("No se pudo añadir la tarea. Posiblemente falta configurar RLS en Supabase.")
@@ -183,14 +172,14 @@ const deleteNote = async (id: number) => {
 }
 
 const startEditNote = (note: Note) => {
-  editingNoteId.value = note.id
+  editingNoteId.value = note.id as number
   editNoteTitle.value = note.title
   editNoteContent.value = note.content
 }
 
 const saveEditNote = async () => {
   const note = notes.value.find(n => n.id === editingNoteId.value)
-  if (note) {
+  if (note && note.id !== undefined) {
     isSyncing.value = true
     try {
       const title = editNoteTitle.value.trim() || 'Sin título'
@@ -249,8 +238,16 @@ const saveEditNote = async () => {
         <div class="input-group">
           <input v-model="newTaskText" @keyup.enter="addTask" placeholder="¿Qué necesitas hacer hoy?" />
           <div class="input-row">
-            <input type="date" v-model="newTaskDueDate" class="date-input" />
-            <button @click="addTask" class="btn-primary" :disabled="isSyncing">Añadir Tarea</button>
+            <select v-model="newTaskPriority" class="priority-select">
+              <option value="Alta">🔴 Alta</option>
+              <option value="Media">🟠 Media</option>
+              <option value="Baja">🔵 Baja</option>
+            </select>
+            <button @click="showDatePicker = !showDatePicker" class="btn-secondary" :class="{ active: showDatePicker }">
+              {{ showDatePicker ? '📅 Quitar' : '📅 Plazo' }}
+            </button>
+            <input v-if="showDatePicker" type="date" v-model="newTaskDueDate" class="date-input" />
+            <button @click="addTask" class="btn-primary" :disabled="isSyncing">Añadir</button>
           </div>
         </div>
 
@@ -268,7 +265,10 @@ const saveEditNote = async () => {
                     <span class="status-text">{{ task.status }}</span>
                   </div>
                   <div class="task-info">
-                    <span class="task-text">{{ task.text }}</span>
+                    <div class="task-header">
+                      <span class="task-text">{{ task.text }}</span>
+                      <span class="priority-badge" :class="task.priority.toLowerCase()">{{ task.priority }}</span>
+                    </div>
                     <div class="task-dates">
                       <span class="date-tag created">📅 {{ formatDate(task.created_at) }}</span>
                       <span v-if="task.due_date" class="date-tag due">⏰ {{ formatDate(task.due_date) }}</span>
@@ -310,7 +310,7 @@ const saveEditNote = async () => {
                   <h3>{{ note.title }}</h3>
                   <div class="actions">
                     <button @click="startEditNote(note)" class="btn-icon">✎</button>
-                    <button @click="deleteNote(note.id)" class="btn-icon delete" :disabled="isSyncing">🗑</button>
+                    <button v-if="note.id !== undefined" @click="deleteNote(note.id)" class="btn-icon delete" :disabled="isSyncing">🗑</button>
                   </div>
                 </div>
                 <p>{{ note.content }}</p>
@@ -403,16 +403,33 @@ const saveEditNote = async () => {
 /* Components */
 .input-group { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 2rem; }
 .input-row { display: flex; gap: 0.75rem; }
-.date-input { 
-  flex: 1; 
-  background: rgba(255, 255, 255, 0.05); 
+.priority-select {
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--glass-border);
-  color: var(--text-muted);
+  color: white;
   padding: 0.5rem;
   border-radius: 0.5rem;
+  font-size: 0.85rem;
+  flex: 1;
 }
-.btn-primary { background: var(--primary); color: white; padding: 0.75rem; border-radius: 0.75rem; font-weight: 600; flex: 1; }
+
+.btn-primary { background: var(--primary); color: white; padding: 0.75rem; border-radius: 0.75rem; font-weight: 600; flex: 1.5; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--glass-border);
+  flex: 1;
+}
+.btn-secondary.active {
+  background: rgba(139, 92, 246, 0.1);
+  color: #a855f7;
+  border-color: #a855f7;
+}
 
 .task-list { list-style: none; display: flex; flex-direction: column; gap: 1rem; }
 .task-item {
@@ -422,8 +439,22 @@ const saveEditNote = async () => {
   transition: all 0.3s ease;
 }
 .task-content { display: flex; align-items: flex-start; gap: 1rem; cursor: pointer; flex: 1; }
-.task-info { display: flex; flex-direction: column; gap: 0.4rem; }
+.task-info { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }
+.task-header { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .task-text { font-size: 1.05rem; }
+
+.priority-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.15rem 0.5rem;
+  border-radius: 2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.priority-badge.alta { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
+.priority-badge.media { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.2); }
+.priority-badge.baja { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
+
 .task-dates { display: flex; gap: 0.75rem; }
 .date-tag { font-size: 0.7rem; color: var(--text-muted); opacity: 0.8; display: flex; align-items: center; gap: 0.2rem; }
 .date-tag.due { color: #f59e0b; opacity: 1; font-weight: 600; }

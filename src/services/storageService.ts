@@ -1,14 +1,15 @@
 import { supabase } from '../supabase'
 
-interface Task {
+export interface Task {
   id: number
   text: string
   status: 'pendiente' | 'en progreso' | 'completada'
   created_at: string
   due_date?: string
+  priority: 'Alta' | 'Media' | 'Baja'
 }
 
-interface Note {
+export interface Note {
   id?: number
   title: string
   content: string
@@ -27,14 +28,14 @@ export const storageService = {
     return data || []
   },
 
-  async addTask(task: Omit<Task, 'id'>) {
+  async addTask(task: { text: string; due_date?: string; priority?: Task['priority'] }): Promise<Task> {
     const { data, error } = await supabase
       .from('tasks')
-      .insert([task])
+      .insert([{ ...task, status: 'pendiente', priority: task.priority || 'Media' }])
       .select()
 
     if (error) throw error
-    return data[0]
+    return data[0] as Task
   },
 
   async updateTask(id: number, updates: Partial<Task>) {
