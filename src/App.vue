@@ -238,11 +238,14 @@ const saveEditNote = async () => {
         <div class="input-group">
           <input v-model="newTaskText" @keyup.enter="addTask" placeholder="¿Qué necesitas hacer hoy?" />
           <div class="input-row">
-            <select v-model="newTaskPriority" class="priority-select">
-              <option value="Alta">🔴 Alta</option>
-              <option value="Media">🟠 Media</option>
-              <option value="Baja">🔵 Baja</option>
-            </select>
+            <div class="selector-wrapper">
+              <span class="label">Prioridad:</span>
+              <select v-model="newTaskPriority" class="priority-select">
+                <option value="Alta">🔴 Alta</option>
+                <option value="Media">🟠 Media</option>
+                <option value="Baja">🔵 Baja</option>
+              </select>
+            </div>
             <button @click="showDatePicker = !showDatePicker" class="btn-secondary" :class="{ active: showDatePicker }">
               {{ showDatePicker ? '📅 Quitar' : '📅 Plazo' }}
             </button>
@@ -403,17 +406,30 @@ const saveEditNote = async () => {
 /* Components */
 .input-group { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 2rem; }
 .input-row { display: flex; gap: 0.75rem; }
-.priority-select {
+.selector-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--glass-border);
-  color: white;
-  padding: 0.5rem;
+  padding: 0.25rem 0.75rem;
   border-radius: 0.5rem;
-  font-size: 0.85rem;
-  flex: 1;
+  flex: 1.5;
 }
+.selector-wrapper .label { font-size: 0.7rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
 
-.btn-primary { background: var(--primary); color: white; padding: 0.75rem; border-radius: 0.75rem; font-weight: 600; flex: 1.5; }
+.priority-select {
+  background: transparent;
+  border: none;
+  color: white;
+  padding: 0.25rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  outline: none;
+}
+.priority-select option { background: #0f172a; color: white; }
+
+.btn-primary { background: var(--primary); color: white; padding: 0.75rem; border-radius: 0.75rem; font-weight: 600; flex: 1.2; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-secondary {
